@@ -17,6 +17,8 @@ local handshake = require('websocket.handshake')
 local frame = require('websocket.frame')
 local utf8_validator = require('websocket.utf8_validator')
 
+local math = require('math')
+
 local HTTPSTATE = {
     REQUEST = 1,
     HEADERS = 2,
@@ -69,7 +71,7 @@ function wspeer.new(peer, ping_freq, is_client, is_handshaked, client_request, m
 end
 
 function wspeer.check_handshake(self, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     if self.handshaked then
         return true
@@ -155,7 +157,7 @@ function wspeer.check_handshake(self, timeout)
 end
 
 function wspeer.check_client_handshake(self, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     if self.handshaked then
         return true
@@ -174,10 +176,10 @@ function wspeer.check_client_handshake(self, timeout)
     request = handshake.upgrade_request(request)
     local packet = handshake.reduce_request(request)
 
-    local rc = self.peer:write(packet,
-                               frame.slice_wait(timeout, starttime))
+    local rc, err = self.peer:write(packet,
+                                    frame.slice_wait(timeout, starttime))
     if rc == nil then
-        return false, 'Connection closed: error'
+        return false, err
     end
     if rc == 0 then
         return false, 'Connection closed: eof'
@@ -228,7 +230,7 @@ function wspeer.check_client_handshake(self, timeout)
 end
 
 function wspeer.shutdown(self, code, reason, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
     log.debug('Websocket peer %s:%d close frame with code %d reason %s',
               self['peerhost'],
               self['peerport'],
@@ -280,14 +282,14 @@ function wspeer.shutdown(self, code, reason, timeout)
 end
 
 function wspeer.check_ping_pong(self, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     if self.ping_freq == nil then
         return true
     end
 
     if self.last_ping_sended ~= nil
-        and clock.time() - self.last_ping_sended < self.ping_freq
+        and clock.monotonic() - self.last_ping_sended < self.ping_freq
     then
         return true
     end
@@ -296,8 +298,9 @@ function wspeer.check_ping_pong(self, timeout)
         log.debug('Websocket peer %s:%d sending ping request',
                  self['peerhost'],
                  self['peerport'])
-        rawset(self, 'last_ping_sended', clock.time())
+        rawset(self, 'last_ping_sended', clock.monotonic())
         local packet = frame.encode('', frame.PING, self.is_client, true)
+	timeout = math.min(timeout or self.ping_freq, self.ping_freq)
         local rc = self.peer:write(packet, frame.slice_wait(timeout, starttime))
         if not rc then
             return nil, 'Connection write error'
@@ -305,7 +308,6 @@ function wspeer.check_ping_pong(self, timeout)
         rawset(self, 'ping_sended', true)
         return true
     else
-        self:shutdown(1000, 'pong timeout', frame.slice_wait(timeout, starttime))
         return nil, 'Pong timeout'
     end
 end
@@ -412,7 +414,7 @@ end
 --[[
 ]]
 function wspeer.read(self, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     if self.is_client then
         local rc, err = self:check_client_handshake(frame.slice_wait(timeout, starttime))
@@ -437,10 +439,11 @@ function wspeer.read(self, timeout)
 
             local corrected = frame.slice_wait(timeout, starttime)
             if self.ping_freq ~= nil then
+                local pong_timeout = frame.slice_wait(self.ping_freq, self.last_ping_sended)
                 if corrected == nil then
-                    corrected = self.ping_freq
-                elseif corrected > self.ping_freq then
-                    corrected = self.ping_freq
+                    corrected = pong_timeout
+                elseif corrected > pong_timeout then
+                    corrected = pong_timeout
                 end
             end
 
@@ -497,7 +500,7 @@ function wspeer.read(self, timeout)
 end
 
 function wspeer.write(self, tuple, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     if type(tuple) == 'string' then
         local message = tuple

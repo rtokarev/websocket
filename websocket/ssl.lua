@@ -143,7 +143,7 @@ local function slice_wait(timeout, starttime)
         return nil
     end
 
-    return timeout - (clock.time() - starttime)
+    return timeout - (clock.monotonic() - starttime)
 end
 
 local X509_FILETYPE_PEM       = 1
@@ -199,7 +199,7 @@ local WAIT_FOR_READ = 1
 local WAIT_FOR_WRITE = 2
 
 function sslsocket.write(self, data, timeout)
-    local start = clock.time()
+    local start = clock.monotonic()
 
     local size = #data
     local s = ffi.cast('const char *', data)
@@ -244,7 +244,7 @@ function sslsocket.write(self, data, timeout)
 end
 
 function sslsocket.shutdown(self, timeout)
-    local start = clock.time()
+    local start = clock.monotonic()
 
     ffi.C.ERR_clear_error()
     local rc = ffi.C.SSL_shutdown(self.ssl) -- ignore result
@@ -329,7 +329,7 @@ function sslsocket.nonblock(self, nb)
 end
 
 local function sysread(self, charptr, size, timeout)
-    local start = clock.time()
+    local start = clock.monotonic()
 
     local mode = rawget(self, 'first_state') or WAIT_FOR_READ
     rawset(self, 'first_state', nil)
@@ -378,7 +378,7 @@ end
 local function read(self, limit, timeout, check, ...)
     assert(limit >= 0)
 
-    local start = clock.time()
+    local start = clock.monotonic()
 
     limit = math.min(limit, LIMIT_INFINITY)
     local rbuf = self.rbuf

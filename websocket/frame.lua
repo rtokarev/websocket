@@ -27,7 +27,7 @@ local function slice_wait(timeout, starttime)
         return nil
     end
 
-    return timeout - (clock.time() - starttime)
+    return timeout - (clock.monotonic() - starttime)
 end
 
 
@@ -156,7 +156,7 @@ end
       nil on timeout or hard error, check it with client:errno()
 ]]
 local function decode_from(client, timeout)
-    local starttime = clock.time()
+    local starttime = clock.monotonic()
 
     local header, payload
     header = client:read({chunk=1}, slice_wait(timeout, starttime))
